@@ -5,13 +5,24 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///inventario.db'
 db = SQLAlchemy(app)
 
+class Sucursal(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False)
+
 class Producto(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     codigo = db.Column(db.String(50), unique=True, nullable=False)
     nombre = db.Column(db.String(100), nullable=False)
-    sucursal = db.Column(db.String(100), nullable=False)
+
+class ProductoSucursal(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=False)
+    sucursal_id = db.Column(db.Integer, db.ForeignKey('sucursal.id'), nullable=False)
     cantidad = db.Column(db.Integer, nullable=False)
     precio = db.Column(db.Float, nullable=False)
+
+    producto = db.relationship('Producto', backref=db.backref('productos_sucursal', lazy=True))
+    sucursal = db.relationship('Sucursal', backref=db.backref('productos_sucursal', lazy=True))
 
 @app.route('/')
 def index():
@@ -20,16 +31,22 @@ def index():
 @app.route('/api/producto/<codigo>', methods=['GET'])
 def obtener_producto(codigo):
     producto = Producto.query.filter_by(codigo=codigo).first()
-    if producto:
-        return jsonify({
-            'codigo': producto.codigo,
-            'nombre': producto.nombre,
-            'sucursal': producto.sucursal,
-            'cantidad': producto.cantidad,
-            'precio': producto.precio
-        })
-    else:
+    if not producto:
         return jsonify({'error': 'Producto no encontrado'}), 404
+
+    sucursales = []
+    for ps in producto.productos_sucursal:
+        sucursales.append({
+            'sucursal': ps.sucursal.nombre,
+            'cantidad': ps.cantidad,
+            'precio': ps.precio
+        })
+
+    return jsonify({
+        'codigo': producto.codigo,
+        'nombre': producto.nombre,
+        'sucursales': sucursales
+    })
 
 if __name__ == '__main__':
     app.run(debug=True)
