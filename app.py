@@ -48,5 +48,57 @@ def obtener_producto(codigo):
         'sucursales': sucursales
     })
 
+@app.route('/api/buscar_producto', methods=['GET'])
+def buscar_producto():
+    nombre = request.args.get('nombre')
+    if not nombre:
+        return jsonify({'error': 'Debe proporcionar un nombre de producto'}), 400
+
+    productos = Producto.query.filter(Producto.nombre.ilike(f"%{nombre}%")).all()
+    if not productos:
+        return jsonify({'error': 'Producto no encontrado'}), 404
+
+    resultado = []
+    for producto in productos:
+        sucursales = []
+        for ps in producto.productos_sucursal:
+            sucursales.append({
+                'sucursal': ps.sucursal.nombre,
+                'cantidad': ps.cantidad,
+                'precio': ps.precio
+            })
+        resultado.append({
+            'codigo': producto.codigo,
+            'nombre': producto.nombre,
+            'sucursales': sucursales
+        })
+
+    return jsonify(resultado)
+
+@app.route('/api/vender', methods=['POST'])
+def vender_producto():
+    data = request.get_json()
+    producto_codigo = data.get('codigo')
+    sucursal_nombre = data.get('sucursal')
+
+    producto = Producto.query.filter_by(codigo=producto_codigo).first()
+    if not producto:
+        return jsonify({'error': 'Producto no encontrado'}), 404
+
+    sucursal = Sucursal.query.filter_by(nombre=sucursal_nombre).first()
+    if not sucursal:
+        return jsonify({'error': 'Sucursal no encontrada'}), 404
+
+    ps = ProductoSucursal.query.filter_by(producto_id=producto.id, sucursal_id=sucursal.id).first()
+    if not ps:
+        return jsonify({'error': 'Producto no disponible en la sucursal'}), 404
+
+    if ps.cantidad <= 0:
+        return jsonify({'error': 'Sin stock disponible'}), 400
+
+    ps.cantidad -= 1
+    db.session.commit()
+    return jsonify({'mensaje': 'Venta realizada', 'cantidad_restante': ps.cantidad})
+
 if __name__ == '__main__':
     app.run(debug=True)
