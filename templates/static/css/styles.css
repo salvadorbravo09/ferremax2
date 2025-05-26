@@ -1,0 +1,20 @@
+/* Botones */
+button.btn-custom, .btn.btn-custom {
+  background-color: #ffa726 !important; /* Orange-ish */
+  color: #111 !important; /* Black text */
+  border: none !important;
+}
+button.btn-custom:hover, button.btn-custom:focus, .btn.btn-custom:hover, .btn.btn-custom:focus {
+  background-color: hsl(33, 98%, 40%) !important; /* Slightly darker orange */
+  color: #111 !important; /* Black text */
+}
+
+/* Fondo */
+body, html {
+  background-color: #fff3e0; /* Cream color matching the button orange */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
