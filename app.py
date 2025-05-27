@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
+
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///inventario.db'
 db = SQLAlchemy(app)
 
@@ -28,6 +29,7 @@ class ProductoSucursal(db.Model):
 def index():
     return render_template('index.html')
 
+
 @app.route('/api/producto/<codigo>', methods=['GET'])
 def obtener_producto(codigo):
     producto = Producto.query.filter_by(codigo=codigo).first()
@@ -41,7 +43,6 @@ def obtener_producto(codigo):
             'cantidad': ps.cantidad,
             'precio': ps.precio
         })
-
     return jsonify({
         'codigo': producto.codigo,
         'nombre': producto.nombre,
@@ -51,6 +52,7 @@ def obtener_producto(codigo):
 @app.route('/api/buscar_producto', methods=['GET'])
 def buscar_producto():
     nombre = request.args.get('nombre')
+    clp = 950
     if not nombre:
         return jsonify({'error': 'Debe proporcionar un nombre de producto'}), 400
 
@@ -65,7 +67,8 @@ def buscar_producto():
             sucursales.append({
                 'sucursal': ps.sucursal.nombre,
                 'cantidad': ps.cantidad,
-                'precio': ps.precio
+                'precio': ps.precio,
+                'precio_clp': round(ps.precio * clp)
             })
         resultado.append({
             'codigo': producto.codigo,
@@ -78,27 +81,32 @@ def buscar_producto():
 @app.route('/api/vender', methods=['POST'])
 def vender_producto():
     data = request.get_json()
-    producto_codigo = data.get('codigo')
-    sucursal_nombre = data.get('sucursal')
-
-    producto = Producto.query.filter_by(codigo=producto_codigo).first()
-    if not producto:
-        return jsonify({'error': 'Producto no encontrado'}), 404
-
-    sucursal = Sucursal.query.filter_by(nombre=sucursal_nombre).first()
-    if not sucursal:
-        return jsonify({'error': 'Sucursal no encontrada'}), 404
-
-    ps = ProductoSucursal.query.filter_by(producto_id=producto.id, sucursal_id=sucursal.id).first()
-    if not ps:
-        return jsonify({'error': 'Producto no disponible en la sucursal'}), 404
-
-    if ps.cantidad <= 0:
-        return jsonify({'error': 'Sin stock disponible'}), 400
-
-    ps.cantidad -= 1
+    cantidad = data.get('cantidad', 1)  # Default 1 si no se envía
+    
+    producto = Producto.query.filter_by(codigo=data['codigo']).first()
+    sucursal = Sucursal.query.filter_by(nombre=data['sucursal']).first()
+    
+    ps = ProductoSucursal.query.filter_by(
+        producto_id=producto.id,
+        sucursal_id=sucursal.id
+    ).first()
+    
+    if ps.cantidad < cantidad:
+        return jsonify({'error': f'Solo hay {ps.cantidad} unidades disponibles'}), 400
+    
+    ps.cantidad -= cantidad
     db.session.commit()
-    return jsonify({'mensaje': 'Venta realizada', 'cantidad_restante': ps.cantidad})
+    
+    return jsonify({
+        'mensaje': 'Venta realizada',
+        'cantidad_restante': ps.cantidad
+    })
+
+@app.after_request
+def add_header(response):
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 if __name__ == '__main__':
     app.run(debug=True)
+    
