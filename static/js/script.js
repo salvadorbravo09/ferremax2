@@ -50,8 +50,8 @@ document.getElementById('btnBuscar').addEventListener('click', function () {
                             <strong>Precio USD:</strong> $${suc.precio.toFixed(2)}
 
                             <div class="input-group mt-1" style="max-width: 320px;">
-                                <input type="number" step="0.01" min="1" value="950" id="${inputId}" class="form-control form-control-sm" placeholder="Tipo de cambio (CLP por USD)">
-                                <button class="btn btn-primary btn-sm" onclick="convertirPrecio('${producto.codigo}', ${suc.precio}, '${inputId}', '${resultadoId}')">Convertir</button>
+                                <input type="number" step="0.01" min="1" id="${inputId}" class="form-control form-control-sm" placeholder="Precio en CLP">
+                                <button class="btn btn-primary btn-sm" onclick="convertirPrecio('${producto.codigo}', ${suc.precio}, '${inputId}', '${resultadoId}')">Convertir a USD</button>
                                 <h5 id="${resultadoId}" class="mb-0 ms-2" style="line-height: 1.5;"></h5>
                             </div>
 
@@ -76,16 +76,22 @@ document.getElementById('btnBuscar').addEventListener('click', function () {
 
 function convertirPrecio(codigoProducto, precioUsd, inputId, resultadoId) {
     const input = document.getElementById(inputId);
-    const tipoCambio = parseFloat(input.value);
+    const precioClp = parseFloat(input.value);
 
-    if (isNaN(tipoCambio) || tipoCambio <= 0) {
-        alert('Por favor ingrese un tipo de cambio válido');
+    if (isNaN(precioClp) || precioClp <= 0) {
+        alert('Por favor ingrese un precio válido en CLP');
         return;
     }
 
-    const precioClp = (precioUsd * tipoCambio).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' });
+    const tipoCambio = 950; // Tipo de cambio fijo
+    const precioEnUsd = (precioClp / tipoCambio).toLocaleString('en-US', { 
+        style: 'currency', 
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
 
-    document.getElementById(resultadoId).textContent = precioClp;
+    document.getElementById(resultadoId).textContent = precioEnUsd;
 }
 
 function venderProducto(codigo, sucursal, cantidadSpanId, inputId) {
@@ -93,7 +99,12 @@ function venderProducto(codigo, sucursal, cantidadSpanId, inputId) {
     const cantidad = parseInt(cantidadInput.value);
 
     if (isNaN(cantidad) || cantidad <= 0) {
-        alert('Por favor ingrese una cantidad válida');
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Por favor ingrese una cantidad válida',
+            confirmButtonColor: '#3085d6'
+        });
         return;
     }
 
@@ -111,17 +122,30 @@ function venderProducto(codigo, sucursal, cantidadSpanId, inputId) {
     .then(response => response.json())
     .then(data => {
         if (data.error) {
-            alert(data.error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error en la venta',
+                text: data.error,
+                confirmButtonColor: '#3085d6'
+            });
         } else {
+            Swal.fire({
+                icon: 'success',
+                title: '¡Venta exitosa!',
+                text: `Se vendieron ${cantidad} unidades. Quedan ${data.cantidad_restante} en stock.`,
+                confirmButtonColor: '#3085d6'
+            });
             document.getElementById(cantidadSpanId).textContent = data.cantidad_restante;
             cantidadInput.value = '';
         }
     })
     .catch(error => {
         console.error('Error en venta:', error);
-        document.getElementById('resultado').innerHTML = `
-            <div class="alert alert-danger">
-                Error en la venta: ${error.message}
-            </div>`;
+        Swal.fire({
+            icon: 'error',
+            title: 'Error en la venta',
+            text: error.message,
+            confirmButtonColor: '#3085d6'
+        });
     });
 }
