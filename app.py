@@ -1,11 +1,16 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, Response
 from flask_sqlalchemy import SQLAlchemy
 import requests
+import json
+import time
 
 app = Flask(__name__)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///inventario.db'
 db = SQLAlchemy(app)
+
+# Diccionario para mantener un registro de los clientes conectados
+connected_clients = set()
 
 class Sucursal(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -26,10 +31,39 @@ class ProductoSucursal(db.Model):
     producto = db.relationship('Producto', backref=db.backref('productos_sucursal', lazy=True))
     sucursal = db.relationship('Sucursal', backref=db.backref('productos_sucursal', lazy=True))
 
+def check_stock_levels():
+    """Verifica los niveles de stock y envía notificaciones si es necesario"""
+    while True:
+        with app.app_context():
+            productos_bajos = ProductoSucursal.query.filter(ProductoSucursal.cantidad <= 5).all()
+            for ps in productos_bajos:
+                mensaje = {
+                    'tipo': 'stock_bajo',
+                    'producto': ps.producto.nombre,
+                    'sucursal': ps.sucursal.nombre,
+                    'cantidad': ps.cantidad
+                }
+                for client in connected_clients:
+                    client.put(f"data: {json.dumps(mensaje)}\n\n")
+        time.sleep(30)  # Verificar cada 30 segundos
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
+@app.route('/api/events')
+def events():
+    def event_stream():
+        queue = Queue()
+        connected_clients.add(queue)
+        try:
+            while True:
+                data = queue.get()
+                yield data
+        except GeneratorExit:
+            connected_clients.remove(queue)
+
+    return Response(event_stream(), mimetype='text/event-stream')
 
 @app.route('/api/producto/<codigo>', methods=['GET'])
 def obtener_producto(codigo):
@@ -83,12 +117,10 @@ def buscar_producto():
 
     return jsonify(resultado)
 
-
-
 @app.route('/api/vender', methods=['POST'])
 def vender_producto():
     data = request.get_json()
-    cantidad = data.get('cantidad', 1)  # Default 1 si no se envía
+    cantidad = data.get('cantidad', 1)
     
     producto = Producto.query.filter_by(codigo=data['codigo']).first()
     sucursal = Sucursal.query.filter_by(nombre=data['sucursal']).first()
@@ -103,6 +135,16 @@ def vender_producto():
     
     ps.cantidad -= cantidad
     db.session.commit()
+
+    # Notificar a todos los clientes conectados sobre el cambio en el stock
+    mensaje = {
+        'tipo': 'stock_actualizado',
+        'producto': producto.nombre,
+        'sucursal': sucursal.nombre,
+        'cantidad': ps.cantidad
+    }
+    for client in connected_clients:
+        client.put(f"data: {json.dumps(mensaje)}\n\n")
     
     return jsonify({
         'mensaje': 'Venta realizada',
@@ -115,5 +157,10 @@ def add_header(response):
     return response
 
 if __name__ == '__main__':
+    # Iniciar el thread de verificación de stock en segundo plano
+    import threading
+    from queue import Queue
+    stock_checker = threading.Thread(target=check_stock_levels, daemon=True)
+    stock_checker.start()
     app.run(debug=True)
     

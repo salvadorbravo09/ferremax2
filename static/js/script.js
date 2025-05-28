@@ -149,3 +149,46 @@ function venderProducto(codigo, sucursal, cantidadSpanId, inputId) {
         });
     });
 }
+
+// Configuración de SSE
+let eventSource;
+
+function iniciarSSE() {
+    if (eventSource) {
+        eventSource.close();
+    }
+
+    eventSource = new EventSource('/api/events');
+    
+    eventSource.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        
+        if (data.tipo === 'stock_bajo') {
+            Swal.fire({
+                icon: 'warning',
+                title: '¡Stock Bajo!',
+                text: `El producto ${data.producto} en ${data.sucursal} tiene solo ${data.cantidad} unidades disponibles.`,
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 5000,
+                timerProgressBar: true
+            });
+        } else if (data.tipo === 'stock_actualizado') {
+            // Actualizar la cantidad en la interfaz si el producto está visible
+            const cantidadSpan = document.querySelector(`[id^="cantidad-"][id$="-${data.sucursal}"]`);
+            if (cantidadSpan) {
+                cantidadSpan.textContent = data.cantidad;
+            }
+        }
+    };
+
+    eventSource.onerror = function(error) {
+        console.error('Error en SSE:', error);
+        // Intentar reconectar después de 5 segundos
+        setTimeout(iniciarSSE, 5000);
+    };
+}
+
+// Iniciar SSE cuando se carga la página
+document.addEventListener('DOMContentLoaded', iniciarSSE);
