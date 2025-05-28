@@ -1,95 +1,92 @@
 document.getElementById('btnBuscar').addEventListener('click', function () {
     const nombre = document.getElementById('buscar').value.trim();
-    
+
     if (!nombre) {
         document.getElementById('resultado').innerHTML = '<div class="alert alert-warning">Por favor ingrese el nombre de un producto.</div>';
         return;
     }
 
     fetch(`/api/buscar_producto?nombre=${encodeURIComponent(nombre)}`)
-        .then(response => response.json())
-        .then(data => {
-            let html = '';
-            
-            if (data.error) {
-                html = `<div class="alert alert-danger">${data.error}</div>`;
-            } else {
-                data.forEach(producto => {
-                    html += `
-                    <div class="card mb-3">
-                        <div class="card-body">
-                            <h5 class="card-title">${producto.nombre}</h5>
-                            <p class="card-text">
-                                <strong>Código:</strong> ${producto.codigo}<br>
-                            </p>
-                            <ul>`;
-
-                    producto.sucursales.forEach((suc, idx) => {
-                        const inputId = `input-${producto.codigo}-${idx}`;
-                        html += `
-                                <li>
-                                    <strong>Sucursal:</strong> ${suc.sucursal} |
-                                    <strong>Cantidad:</strong> <span id="cantidad-${producto.codigo}-${idx}">${suc.cantidad}</span> |
-                                    <strong>Precio USD:</strong> $${suc.precio.toFixed(2)} |
-                                    <strong>Precio (CLP):</strong> $${suc.precio_clp.toLocaleString('es-CL')} |
-                                    <input type="number" id="${inputId}" placeholder="Cantidad" min="1" max="${suc.cantidad}" style="width: 70px;">
-                                    <button class="btn btn-success btn-sm" 
-                                            onclick="venderProducto('${producto.codigo}', '${suc.sucursal}', 'cantidad-${producto.codigo}-${idx}', '${inputId}')">
-                                        Vender
-                                    </button>
-                                </li>`;
-                    });
-                    
-                    html += `
-                            </ul>
-                        </div>
-                    </div>
-            
-                    <div class="mb-3 p-2 border rounded">
-                        <div class="input-group">
-                            <input type="text" 
-                                    autocomplete="off"
-                                   id="tipo-cambio-${producto.codigo}" 
-                                   class="form-control form-control-sm" 
-                                   placeholder="Tipo de cambio (CLP)"
-                                   style="width: 75px;">
-                            <button class="btn btn-primary btn-sm" 
-                                    onclick="convertirMonedaProducto('${producto.codigo}', ${producto.sucursales[0].precio})">
-                                Convertir
-                            </button>
-                            <span class="input-group-text">
-                                Resultado: <span id="resultado-clp-${producto.codigo}"></span>
-                            </span>
-                        </div>
-                    </div>`;
-                });
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Error HTTP: ${response.status}`);
             }
-            
+            return response.json();
+        })
+        .then(data => {
+            console.log('Respuesta de API:', data); // Para debug
+
+            // Si la API envía {error: "..."} y no array, lo manejamos aquí
+            if (data.error) {
+                document.getElementById('resultado').innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                return;
+            }
+
+            if (!Array.isArray(data) || data.length === 0) {
+                document.getElementById('resultado').innerHTML = `<div class="alert alert-info">No se encontraron productos.</div>`;
+                return;
+            }
+
+            let html = '';
+
+            data.forEach(producto => {
+                html += `
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">${producto.nombre}</h5>
+                        <p><strong>Código:</strong> ${producto.codigo}</p>
+                        <ul>`;
+
+                producto.sucursales.forEach((suc, idx) => {
+                    const inputId = `tipo-cambio-${producto.codigo}-${idx}`;
+                    const resultadoId = `resultado-clp-${producto.codigo}-${idx}`;
+                    const cantidadSpanId = `cantidad-${producto.codigo}-${idx}`;
+                    const inputVentaId = `input-cantidad-${producto.codigo}-${idx}`;
+
+                    html += `
+                        <li>
+                            <strong>Sucursal:</strong> ${suc.sucursal} |
+                            <strong>Cantidad:</strong> <span id="${cantidadSpanId}">${suc.cantidad}</span> |
+                            <strong>Precio USD:</strong> $${suc.precio.toFixed(2)}
+
+                            <div class="input-group mt-1" style="max-width: 320px;">
+                                <input type="number" step="0.01" min="1" value="950" id="${inputId}" class="form-control form-control-sm" placeholder="Tipo de cambio (CLP por USD)">
+                                <button class="btn btn-primary btn-sm" onclick="convertirPrecio('${producto.codigo}', ${suc.precio}, '${inputId}', '${resultadoId}')">Convertir</button>
+                                <h5 id="${resultadoId}" class="mb-0 ms-2" style="line-height: 1.5;"></h5>
+                            </div>
+
+                            <div class="input-group mt-2" style="max-width: 200px;">
+                                <input type="number" min="1" max="${suc.cantidad}" id="${inputVentaId}" class="form-control form-control-sm" placeholder="Cantidad a vender">
+                                <button class="btn btn-success btn-sm" onclick="venderProducto('${producto.codigo}', '${suc.sucursal}', '${cantidadSpanId}', '${inputVentaId}')">Vender</button>
+                            </div>
+                        </li>`;
+                });
+
+                html += `</ul></div></div>`;
+            });
+
             document.getElementById('resultado').innerHTML = html;
         })
         .catch(error => {
+            console.error('Error en fetch:', error);
             document.getElementById('resultado').innerHTML = `<div class="alert alert-danger">Error al consultar el producto.</div>`;
         });
 });
 
-// Función de conversión modificada para trabajar por producto
-function convertirMonedaProducto(productoCodigo, precioUsd) {
-    const input = document.getElementById(`tipo-cambio-${productoCodigo}`);
-    const valorRaw = input.value.trim().replace(',', '.'); // Corrige formato coma-punto
-    const tipoCambio = parseFloat(valorRaw);
 
-    // Si el valor ingresado no es válido, usamos 950 como tipo de cambio por defecto
-    const cambioFinal = (!isNaN(tipoCambio) && tipoCambio > 0) ? tipoCambio : 950;
+function convertirPrecio(codigoProducto, precioUsd, inputId, resultadoId) {
+    const input = document.getElementById(inputId);
+    const tipoCambio = parseFloat(input.value);
 
-    const resultado = precioUsd * cambioFinal;
+    if (isNaN(tipoCambio) || tipoCambio <= 0) {
+        alert('Por favor ingrese un tipo de cambio válido');
+        return;
+    }
 
-    document.getElementById(`resultado-clp-${productoCodigo}`).textContent = 
-        `$${resultado.toLocaleString('es-CL')} CLP`;
+    const precioClp = (precioUsd * tipoCambio).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' });
+
+    document.getElementById(resultadoId).textContent = precioClp;
 }
-
-
-
-
 
 function venderProducto(codigo, sucursal, cantidadSpanId, inputId) {
     const cantidadInput = document.getElementById(inputId);
@@ -121,6 +118,7 @@ function venderProducto(codigo, sucursal, cantidadSpanId, inputId) {
         }
     })
     .catch(error => {
+        console.error('Error en venta:', error);
         document.getElementById('resultado').innerHTML = `
             <div class="alert alert-danger">
                 Error en la venta: ${error.message}

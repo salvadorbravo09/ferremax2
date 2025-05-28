@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
+import requests
 
 app = Flask(__name__)
 
@@ -49,10 +50,14 @@ def obtener_producto(codigo):
         'sucursales': sucursales
     })
 
+API_KEY = 'apikey'  
+CURRENCY_API_URL = f'https://v6.exchangerate-api.com/v6/{API_KEY}/pair/CLP/USD'
+
 @app.route('/api/buscar_producto', methods=['GET'])
 def buscar_producto():
     nombre = request.args.get('nombre')
-    clp = 950
+    print(f"Buscando producto con nombre: {nombre}")  # debug
+
     if not nombre:
         return jsonify({'error': 'Debe proporcionar un nombre de producto'}), 400
 
@@ -68,7 +73,7 @@ def buscar_producto():
                 'sucursal': ps.sucursal.nombre,
                 'cantidad': ps.cantidad,
                 'precio': ps.precio,
-                'precio_clp': round(ps.precio * clp)
+                'precio_clp': round(ps.precio * 950)
             })
         resultado.append({
             'codigo': producto.codigo,
@@ -77,6 +82,8 @@ def buscar_producto():
         })
 
     return jsonify(resultado)
+
+
 
 @app.route('/api/vender', methods=['POST'])
 def vender_producto():
