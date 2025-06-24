@@ -1,2 +1,8 @@
 flask
 flask_sqlalchemy
+grpcio>=1.73.0
+grpcio-tools>=1.73.0
+Pillow
+python-multipart
+requests
+SQLAlchemy

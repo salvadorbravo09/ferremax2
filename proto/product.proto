@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package product;
+
+service ProductService {
+  rpc ValidateProduct (ProductRequest) returns (ProductResponse) {}
+}
+
+message ProductRequest {
+  string codigo = 1;
+  string nombre = 2;
+  double precio = 3;
+  int32 cantidad = 4;
+  string sucursal = 5;
+  bytes foto = 6;
+}
+
+message ProductResponse {
+  bool valid = 1;
+  string message = 2;
+  repeated string errors = 3;
+} 
