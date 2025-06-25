@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, render_template, Response
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import joinedload
 import requests
 import json
 import time
@@ -12,6 +13,9 @@ from queue import Queue
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+
+
+
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///inventario.db'
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
@@ -114,20 +118,26 @@ def buscar_producto():
     if not nombre:
         return jsonify({'error': 'Debe proporcionar un nombre de producto'}), 400
 
-    productos = Producto.query.filter(Producto.nombre.ilike(f"%{nombre}%")).all()
+    productos = Producto.query.options(
+    joinedload(Producto.productos_sucursal).joinedload(ProductoSucursal.sucursal)
+    ).filter(Producto.nombre.ilike(f"%{nombre}%")).all()
+
     if not productos:
         return jsonify({'error': 'Producto no encontrado'}), 404
-
+    
+    conversion_cache = {'tasa': 950, 'timestamp': 0}
     # Obtener tasa de conversión a dólar
-    try:
-        response = requests.get(CURRENCY_API_URL)
-        if response.status_code == 200:
-            data = response.json()
-            tasa_conversion = data.get('conversion_rate', 950)
-        else:
-            tasa_conversion = 950  # Valor por defecto
-    except Exception:
-        tasa_conversion = 950  # Valor por defecto en caso de error
+    now = time.time()
+    if now - conversion_cache['timestamp'] > 3600:  # Si pasó más de 1 hora
+        try:
+            response = requests.get(CURRENCY_API_URL, timeout=2)
+            if response.status_code == 200:
+                data = response.json()
+                conversion_cache['tasa'] = data.get('conversion_rate', 950)
+                conversion_cache['timestamp'] = now
+        except Exception:
+            pass  # No actualiza la tasa si hay error
+    tasa_conversion = conversion_cache['tasa']
 
     resultado = []
     for producto in productos:
@@ -215,7 +225,11 @@ def agregar_producto():
         response = stub.ValidateProduct(request_grpc)
         
         if not response.valid:
-            return jsonify({'error': response.message, 'errors': response.errors}), 400
+            return jsonify({
+            'error': response.message,
+            'errors': list(response.errors)  
+        }), 400
+
         
         # Guardar la imagen
         filename = secure_filename(f"{codigo}_{foto.filename}")

@@ -1,29 +1,32 @@
+// --------------------
+// Búsqueda de productos
+// --------------------
 document.getElementById('btnBuscar').addEventListener('click', function () {
     const nombre = document.getElementById('buscar').value.trim();
 
     if (!nombre) {
-        document.getElementById('resultado').innerHTML = '<div class="alert alert-warning">Por favor ingrese el nombre de un producto.</div>';
+        document.getElementById('resultado').innerHTML = 
+            '<div class="alert alert-warning">Por favor ingrese el nombre de un producto.</div>';
         return;
     }
 
     fetch(`/api/buscar_producto?nombre=${encodeURIComponent(nombre)}`)
         .then(response => {
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`Error HTTP: ${response.status}`);
             return response.json();
         })
         .then(data => {
-            console.log('Respuesta de API:', data); // Para debug
+            console.log('Respuesta de API:', data);
 
-            // Si la API envía {error: "..."} y no array, lo manejamos aquí
             if (data.error) {
-                document.getElementById('resultado').innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                document.getElementById('resultado').innerHTML = 
+                    `<div class="alert alert-danger">${data.error}</div>`;
                 return;
             }
 
             if (!Array.isArray(data) || data.length === 0) {
-                document.getElementById('resultado').innerHTML = `<div class="alert alert-info">No se encontraron productos.</div>`;
+                document.getElementById('resultado').innerHTML = 
+                    `<div class="alert alert-info">No se encontraron productos.</div>`;
                 return;
             }
 
@@ -31,11 +34,13 @@ document.getElementById('btnBuscar').addEventListener('click', function () {
 
             data.forEach(producto => {
                 html += `
-                <div class="card mb-3">
-                    <div class="card-body">
-                        <h5 class="card-title">${producto.nombre}</h5>
-                        <p><strong>Código:</strong> ${producto.codigo}</p>
-                        <ul>`;
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">${producto.nombre}</h5>
+                            <img src="/static/uploads/${producto.foto}" alt="${producto.nombre}" class="img-fluid mb-3" style="max-height: 200px;">
+                            <p><strong>Código:</strong> ${producto.codigo}</p>
+                            <ul>`;
+
 
                 producto.sucursales.forEach((suc, idx) => {
                     const inputId = `tipo-cambio-${producto.codigo}-${idx}`;
@@ -47,7 +52,7 @@ document.getElementById('btnBuscar').addEventListener('click', function () {
                         <li>
                             <strong>Sucursal:</strong> ${suc.sucursal} |
                             <strong>Cantidad:</strong> <span id="${cantidadSpanId}">${suc.cantidad}</span> |
-                            <strong>Precio USD:</strong> $${suc.precio.toFixed(2)}
+                            <strong>Precio USD:</strong> $${suc.precio.toFixed(2)}  
 
                             <div class="input-group mt-1" style="max-width: 320px;">
                                 <input type="number" step="0.01" min="1" id="${inputId}" class="form-control form-control-sm" placeholder="Precio en CLP">
@@ -69,16 +74,42 @@ document.getElementById('btnBuscar').addEventListener('click', function () {
         })
         .catch(error => {
             console.error('Error en fetch:', error);
-            document.getElementById('resultado').innerHTML = `<div class="alert alert-danger">Error al consultar el producto.</div>`;
+            document.getElementById('resultado').innerHTML = 
+                `<div class="alert alert-danger">Error al consultar el producto.</div>`;
         });
 });
 
 
+// --------------------
+// Cache y obtención tipo de cambio
+// --------------------
+let cachedTipoCambio = null;
+let cachedTimestamp = 0;
+
+function obtenerTipoCambio() {
+    const now = Date.now();
+    if (!cachedTipoCambio || (now - cachedTimestamp) > 3600000) { // 1 hora
+        return fetch('/api/conversion/dolar')
+            .then(response => response.json())
+            .then(data => {
+                cachedTipoCambio = data.tasa;
+                cachedTimestamp = now;
+                return cachedTipoCambio;
+            })
+            .catch(() => 950); // fallback en caso de error
+    } else {
+        return Promise.resolve(cachedTipoCambio);
+    }
+}
+
+
+// --------------------
+// Conversión precio CLP a USD
+// --------------------
 function convertirPrecio(codigoProducto, precioUsd, inputId, resultadoId) {
     const input = document.getElementById(inputId);
     const precioClp = parseFloat(input.value);
 
-    // Validación para asegurar que el valor sea mayor que cero (requisito #5)
     if (isNaN(precioClp) || precioClp <= 0) {
         Swal.fire({
             icon: 'error',
@@ -89,41 +120,26 @@ function convertirPrecio(codigoProducto, precioUsd, inputId, resultadoId) {
         return;
     }
 
-    // Obtener el tipo de cambio de la API
-    fetch('/api/conversion/dolar')
-        .then(response => response.json())
-        .then(data => {
-            const tipoCambio = data.tasa;
-            const precioEnUsd = (precioClp / tipoCambio).toLocaleString('en-US', { 
-                style: 'currency', 
-                currency: 'USD',
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            });
-
-            document.getElementById(resultadoId).textContent = precioEnUsd;
-        })
-        .catch(error => {
-            console.error('Error al obtener tipo de cambio:', error);
-            // Usar valor fijo en caso de error
-            const tipoCambio = 950;
-            const precioEnUsd = (precioClp / tipoCambio).toLocaleString('en-US', { 
-                style: 'currency', 
-                currency: 'USD',
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            });
-
-            document.getElementById(resultadoId).textContent = precioEnUsd + " (usando tasa por defecto)";
+    obtenerTipoCambio().then(tipoCambio => {
+        const precioEnUsd = (precioClp / tipoCambio).toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
         });
+        document.getElementById(resultadoId).textContent = precioEnUsd;
+    });
 }
 
+
+// --------------------
+// Venta de producto
+// --------------------
 function venderProducto(codigo, sucursal, cantidadSpanId, inputId) {
     const cantidadInput = document.getElementById(inputId);
     const cantidad = parseInt(cantidadInput.value);
     const stockActual = parseInt(document.getElementById(cantidadSpanId).textContent);
 
-    // Validación para asegurar que el valor sea mayor que cero (requisito #5)
     if (isNaN(cantidad) || cantidad <= 0) {
         Swal.fire({
             icon: 'error',
@@ -134,7 +150,6 @@ function venderProducto(codigo, sucursal, cantidadSpanId, inputId) {
         return;
     }
 
-    // Validar en el front que exista la cantidad en stock (requisito #4)
     if (cantidad > stockActual) {
         Swal.fire({
             icon: 'error',
@@ -147,14 +162,8 @@ function venderProducto(codigo, sucursal, cantidadSpanId, inputId) {
 
     fetch('/api/vender', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-            codigo: codigo, 
-            sucursal: sucursal,
-            cantidad: cantidad
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo, sucursal, cantidad })
     })
     .then(response => response.json())
     .then(data => {
@@ -187,19 +196,20 @@ function venderProducto(codigo, sucursal, cantidadSpanId, inputId) {
     });
 }
 
-// Configuración de SSE
+
+// --------------------
+// Configuración SSE (Server-Sent Events)
+// --------------------
 let eventSource;
 
 function iniciarSSE() {
-    if (eventSource) {
-        eventSource.close();
-    }
+    if (eventSource) eventSource.close();
 
     eventSource = new EventSource('/api/events');
-    
+
     eventSource.onmessage = function(event) {
         const data = JSON.parse(event.data);
-        
+
         if (data.tipo === 'stock_bajo') {
             Swal.fire({
                 icon: 'warning',
@@ -212,13 +222,13 @@ function iniciarSSE() {
                 timerProgressBar: true
             });
         } else if (data.tipo === 'stock_actualizado') {
-            // Actualizar la cantidad en la interfaz si el producto está visible
-            const cantidadElementos = document.querySelectorAll(`[id^="cantidad-${data.producto.replace(/\s+/g, '-')}-"]`);
+            const cantidadElementos = document.querySelectorAll(
+                `[id^="cantidad-${data.producto.replace(/\s+/g, '-')}-"]`
+            );
             cantidadElementos.forEach(el => {
                 if (el.closest('li').textContent.includes(data.sucursal)) {
                     el.textContent = data.cantidad;
-                    
-                    // Si el stock baja a menos de 10, mostrar alerta
+
                     if (data.cantidad < 10) {
                         Swal.fire({
                             icon: 'warning',
@@ -238,26 +248,25 @@ function iniciarSSE() {
 
     eventSource.onerror = function(error) {
         console.error('Error en SSE:', error);
-        // Intentar reconectar después de 5 segundos
-        setTimeout(iniciarSSE, 5000);
+        setTimeout(iniciarSSE, 5000); // Reintenta conexión
     };
+
+    window.addEventListener('beforeunload', () => {
+        if (eventSource) eventSource.close();
+    });
 }
 
-// Iniciar SSE cuando se carga la página
 document.addEventListener('DOMContentLoaded', function() {
     iniciarSSE();
-    
-    // Cargar la lista de sucursales para el formulario
+
+    // Cargar sucursales para formulario
     fetch('/api/sucursales')
         .then(response => response.json())
         .then(data => {
             const select = document.getElementById('productBranch');
-            // Limpiar opciones actuales excepto la primera
-            while (select.options.length > 1) {
-                select.remove(1);
-            }
-            
-            // Agregar las sucursales desde la API
+
+            while (select.options.length > 1) select.remove(1);
+
             data.forEach(sucursal => {
                 const option = document.createElement('option');
                 option.value = sucursal.nombre;
@@ -270,7 +279,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 });
 
-// Manejar la vista previa de la imagen
+
+// --------------------
+// Vista previa de imagen al subir archivo
+// --------------------
 document.getElementById('productPhoto').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (file) {
@@ -279,20 +291,23 @@ document.getElementById('productPhoto').addEventListener('change', function(e) {
             const preview = document.getElementById('preview');
             preview.src = e.target.result;
             document.getElementById('imagePreview').style.display = 'block';
-        }
+        };
         reader.readAsDataURL(file);
     }
 });
 
-// Manejar el guardado de nuevo producto
+
+// --------------------
+// Guardar nuevo producto
+// --------------------
 document.getElementById('saveProduct').addEventListener('click', function() {
     const form = document.getElementById('addProductForm');
+
     if (!form.checkValidity()) {
         form.reportValidity();
         return;
     }
 
-    // Validaciones adicionales (requisito #5)
     const precio = parseFloat(document.getElementById('productPrice').value);
     const cantidad = parseInt(document.getElementById('productQuantity').value);
 
@@ -346,8 +361,8 @@ document.getElementById('saveProduct').addEventListener('click', function() {
                 text: 'Producto agregado correctamente',
                 confirmButtonColor: '#3085d6'
             });
-            
-            // Cerrar el modal y limpiar el formulario
+
+            // Cerrar modal y limpiar formulario
             const modal = bootstrap.Modal.getInstance(document.getElementById('addProductModal'));
             modal.hide();
             form.reset();
